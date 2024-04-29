@@ -64,10 +64,11 @@ type Prover struct {
 */
 
 type ProofInfo struct {
-	Prefix        string `json:"prefix" binding:"required"`
-	Postfix       string `json:"postfix" binding:"required"`
-	PrevTxnId     string `json:"prev_txnid" binding:"required"`
-	TransactionId string `json:"txnid" binding:"required"`
+	RawTx         string `json:"raw_tx" binding:"required"`
+	Prefix        string
+	Postfix       string
+	PrevTxnId     string
+	TransactionId string
 }
 
 type ProofData struct {
@@ -164,15 +165,12 @@ func createBaseCaseProof(pInfo *ProofInfo) (string, error) {
 	innerField := ecc.BLS24_315.ScalarField()
 	outerField := ecc.BW6_633.ScalarField()
 
-	fullTxBytes, _ := hex.DecodeString("020000000190bc0a14e94cdd565265d79c4f9bed0f6404241f3fb69d6458b30b41611317f7000000004847304402204e643ff6ed0e3c3e1e83f3e2c74a9d0613849bb624c1d12351f1152cf91ebc1f02205deaa38e3f8f8e43d1979f999c03ffa65b9087c1a6545ecffa2b7898c042bcb241feffffff0200ca9a3b000000001976a914662db6c1a68cdf035bfb9c6580550eb3520caa9d88ac40276bee000000001976a9142dbbeab87bd7a8fca8b2761e5d798dfd76d5af4988ac6f000000")
-	prefixBytes, _ := hex.DecodeString("0200000001")
-	prevTxnIdBytes, _ := hex.DecodeString("90bc0a14e94cdd565265d79c4f9bed0f6404241f3fb69d6458b30b41611317f7")
-	postFixBytes, _ := hex.DecodeString("000000004847304402204e643ff6ed0e3c3e1e83f3e2c74a9d0613849bb624c1d12351f1152cf91ebc1f02205deaa38e3f8f8e43d1979f999c03ffa65b9087c1a6545ecffa2b7898c042bcb241feffffff0200ca9a3b000000001976a914662db6c1a68cdf035bfb9c6580550eb3520caa9d88ac40276bee000000001976a9142dbbeab87bd7a8fca8b2761e5d798dfd76d5af4988ac6f000000")
+	fullTxBytes, _ := hex.DecodeString(pInfo.RawTx)
 
 	firstHash := sha256.Sum256(fullTxBytes)
 	genesisTxId := sha256.Sum256(firstHash[:])
 
-	genesisWitness, err := ivcgroth16.CreateBaseCaseWitness(prefixBytes, postFixBytes, prevTxnIdBytes, genesisTxId, innerField)
+	genesisWitness, err := ivcgroth16.CreateBaseCaseWitness(fullTxBytes, genesisTxId, innerField)
 
 	if err != nil {
 		return "", err
