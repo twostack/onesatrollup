@@ -6,7 +6,7 @@ require (
 	github.com/gin-gonic/gin v1.9.1
 	github.com/rs/zerolog v1.32.0
 	github.com/stretchr/testify v1.9.0
-	github.com/twostack/zklib v0.1.5
+	github.com/twostack/zklib v0.1.6
 )
 
 require (
