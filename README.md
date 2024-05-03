@@ -1,10 +1,9 @@
 # Description 
 
 ## A note about transaction sizes and composition
-
-### Base Case Transaction 
-
-### Normal Case Transaction
+This implementation is sensitive about the sizes of transactions. Specifically, each consecutive transaction 
+in the rollup (except for the genesis transaction), *must* all have the same size. 
+Additionally it is important that each transaction has a consistent structure w.r.t. funding and spending outputs.
 
 # Running the service
 
