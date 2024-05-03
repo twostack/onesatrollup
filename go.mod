@@ -6,7 +6,7 @@ require (
 	github.com/gin-gonic/gin v1.9.1
 	github.com/rs/zerolog v1.30.0
 	github.com/stretchr/testify v1.9.0
-	github.com/twostack/zklib v0.1.3
+	github.com/twostack/zklib v0.1.5
 )
 
 require (
@@ -58,4 +58,4 @@ require (
 	rsc.io/tmplfunc v0.0.3 // indirect
 )
 
-replace github.com/twostack/zklib => /Users/stephanfebruary/IdeaProjects/zklib
+//replace github.com/twostack/zklib => /Users/stephanfebruary/IdeaProjects/zklib
