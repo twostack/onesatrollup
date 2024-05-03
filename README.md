@@ -10,6 +10,8 @@ Additionally it is important that each transaction has a consistent structure w.
 ## Build it
 The `-w` flag is to indicate stripping the debug symbols. Smaller binary is the result. 
 ```shell
+$ go get 
+$ go mod tidy
 $ go build -ldflags "-w" . 
 ```
 
