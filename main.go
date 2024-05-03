@@ -1,6 +1,7 @@
 package main
 
 import (
+	"fmt"
 	"github.com/gin-gonic/gin"
 	"github.com/twostack/zklib"
 	ivcgroth16 "github.com/twostack/zklib/twostack/groth16"
@@ -74,10 +75,17 @@ func handleRollupRoute(context *gin.Context) {
 
 }
 
+var proofSystem *zklib.ProofSystem
+
 func main() {
 
 	//bootstrap the base case proof system
-	zklib.BootProofSystem()
+	ps, err := zklib.NewProofSystem()
+	proofSystem = ps
+
+	if err != nil {
+		fmt.Printf("Failed to bootstrap Proof System: %s\n", err)
+	}
 
 	//check if normal case keys exist
 
