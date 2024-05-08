@@ -7,8 +7,9 @@ import (
 )
 
 type VerifyData struct {
-	Proof string `json:"proof" binding:"required"`
-	TxnId string `json:"txn_id" binding:"required"`
+	Proof   string `json:"proof"`
+	TxnId   string `json:"txn_id"`
+	Witness string `json:"witness"`
 }
 
 type VerifyResult struct {

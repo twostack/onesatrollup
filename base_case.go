@@ -33,7 +33,7 @@ func handleBaseVerifyRoute(context *gin.Context) {
 	vData := &VerifyData{}
 
 	if context.Bind(vData) == nil {
-		isVerified := VerifyBaseProof(vData.TxnId, vData.Proof)
+		isVerified := VerifyBaseProof(vData.TxnId, vData.Proof, innerCurveId, outerCurveId)
 
 		context.JSON(
 			http.StatusOK,

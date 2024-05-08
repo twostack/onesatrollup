@@ -12,7 +12,11 @@ func handleNormalVerifyRoute(context *gin.Context) {
 	vData := &VerifyData{}
 
 	if context.Bind(vData) == nil {
-		isVerified := VerifyNormalProof(vData.TxnId, vData.Proof)
+
+		isVerified := VerifyNormalProof(vData.TxnId, vData.Proof, innerCurveId, outerCurveId)
+		if !isVerified {
+			log.Error().Msg("\nVerify with Outer CurveID failed \n")
+		}
 
 		context.JSON(
 			http.StatusOK,
@@ -32,7 +36,7 @@ func handleNormalCaseProverRoute(context *gin.Context) {
 
 	if err == nil {
 
-		proof, err := CreateNormalCaseProof(&pInfo)
+		proof, pubWitness, err := CreateNormalCaseProof(&pInfo, baseVerifyingKey, normalVerifyingKey, baseCcs)
 
 		if err != nil {
 			log.Err(err)
@@ -41,7 +45,8 @@ func handleNormalCaseProverRoute(context *gin.Context) {
 			context.JSON(
 				http.StatusOK,
 				gin.H{
-					"proof": proof,
+					"proof":   proof,
+					"witness": pubWitness,
 				})
 		}
 

@@ -247,13 +247,13 @@ func readKeys(prefix string, curveId ecc.ID) (native_groth16.VerifyingKey, nativ
 	return innerVK, innerPK, nil
 }
 
-func CreateNormalCaseProof(normalInfo *NormalProofInfo) (string, error) {
+func CreateNormalCaseProof(normalInfo *NormalProofInfo, baseVk native_groth16.VerifyingKey, normalVk native_groth16.VerifyingKey, prevCcs constraint.ConstraintSystem) (string, string, error) {
 
 	//var prevTxWitness witness.Witness
 
 	fullTxBytes, err := hex.DecodeString(normalInfo.RawTx)
 	if err != nil {
-		return "", err
+		return "", "", err
 	}
 
 	prefixBytes, prevTxnId, postfixBytes, err := SliceTx(fullTxBytes, normalInfo.InputIndex)
@@ -264,15 +264,15 @@ func CreateNormalCaseProof(normalInfo *NormalProofInfo) (string, error) {
 	prevTxProof, err := txivc.UnmarshalProof(normalInfo.Proof, innerCurveId)
 	if err != nil {
 		fmt.Printf("Failed to unmarshall provided json proof object:   %s\n", err)
-		return "", err
+		return "", "", err
 	}
 
 	prevTxWitness, err := txivc.CreateBaseCaseLightWitness(prevTxnId[:], InnerField)
 
 	pubWitness, err := prevTxWitness.Public()
-	isVerified := txivc.VerifyProof(pubWitness, prevTxProof, baseVerifyingKey)
+	isVerified := txivc.VerifyProof(pubWitness, prevTxProof, baseVk)
 	if !isVerified {
-		return "Failed to verify the inner proof", err
+		return "Failed to verify the inner proof", "", err
 	}
 
 	circuitVk, err := groth16.ValueOfVerifyingKey[sw_bls12377.G1Affine, sw_bls12377.G2Affine, sw_bls12377.GT](baseVerifyingKey)
@@ -282,20 +282,37 @@ func CreateNormalCaseProof(normalInfo *NormalProofInfo) (string, error) {
 	outerAssignment := txivc.CreateOuterAssignment(circuitWitness, circuitProof, circuitVk, prefixBytes, prevTxnId, postfixBytes, currTxId[:])
 	outerWitness, err := frontend.NewWitness(&outerAssignment, OuterField)
 	if err != nil {
-		fmt.Printf("Fail ! %s\n", err)
-		return "", err
+		fmt.Printf("Failed to create new outer witness ! %s\n", err)
+		return "", "", err
 	}
 
 	resultProof, err := txivc.ComputeProof(normalCcs, normalProvingKey, outerWitness)
+	if err != nil {
+		fmt.Printf("Failed to computer outer proof! %s\n", err)
+		return "", "", err
+	}
 	//outerProof, err := txivc.ComputeProof(outerCcs, outerProvingKey, outerWitness)
+
+	//pubWitness, err = txivc.CreateNormalLightWitness(currTxId[:], OuterField, prevCcs)
+	pubWitness, err = outerWitness.Public()
+
+	witnessBytes, _ := pubWitness.MarshalBinary()
+
+	isVerified = txivc.VerifyProof(pubWitness, resultProof, normalVk)
+	if !isVerified {
+		fmt.Printf("Failed to verify the generated normal proof ! %s\n", err)
+		return "", "", err
+	} else {
+		fmt.Printf("Excellent ! Normal proof verified OK. With Witness.TxId [%s] \n", hex.EncodeToString(currTxId[:]))
+	}
 
 	jsonBytes, err := json.Marshal(resultProof)
 
 	if err != nil {
-		return "", err
+		return "", "", err
 	}
 
-	return string(jsonBytes), nil
+	return string(jsonBytes), hex.EncodeToString(witnessBytes), nil
 
 }
 
@@ -416,9 +433,9 @@ func CreateBaseCaseProof(pInfo *BaseProofInfo) (string, error) {
 	return string(jsonBytes), nil
 }
 
-func VerifyBaseProof(txId string, jsonProof string) bool {
+func VerifyBaseProof(txId string, jsonProof string, innerCurve ecc.ID, outerCurve ecc.ID) bool {
 
-	txProof := native_groth16.NewProof(innerCurveId)
+	txProof := native_groth16.NewProof(innerCurve)
 
 	err := json.Unmarshal([]byte(jsonProof), &txProof)
 	if err != nil {
@@ -431,7 +448,7 @@ func VerifyBaseProof(txId string, jsonProof string) bool {
 		fmt.Printf("%s", err)
 		return false
 	}
-	publicWitness, err := txivc.CreateBaseCaseLightWitness(genesisTxId[:], InnerField)
+	publicWitness, err := txivc.CreateBaseCaseLightWitness(genesisTxId[:], innerCurve.ScalarField())
 	if err != nil {
 		fmt.Printf("%s", err)
 		return false
@@ -440,7 +457,8 @@ func VerifyBaseProof(txId string, jsonProof string) bool {
 	//isVerified := ps.VerifyProof(publicWitness, &txProof)
 
 	//func (po *BaseProof) VerifyProof(witness *witness.Witness, proof *native_groth16.Proof) bool {
-	err = native_groth16.Verify(txProof, baseVerifyingKey, publicWitness, verifierOptions)
+	vOptions := groth16.GetNativeVerifierOptions(outerCurve.ScalarField(), innerCurve.ScalarField())
+	err = native_groth16.Verify(txProof, baseVerifyingKey, publicWitness, vOptions)
 	if err != nil {
 		fmt.Printf("Fail on proof verification! %s\n", err)
 		return false
@@ -450,9 +468,9 @@ func VerifyBaseProof(txId string, jsonProof string) bool {
 
 }
 
-func VerifyNormalProof(txnId string, jsonProof string) bool {
+func VerifyNormalProof(txnId string, jsonProof string, innerCurve ecc.ID, outerCurve ecc.ID) bool {
 
-	txProof := native_groth16.NewProof(outerCurveId)
+	txProof := native_groth16.NewProof(outerCurve)
 
 	err := json.Unmarshal([]byte(jsonProof), &txProof)
 	if err != nil {
@@ -465,13 +483,16 @@ func VerifyNormalProof(txnId string, jsonProof string) bool {
 		fmt.Printf("%s", err)
 		return false
 	}
-	publicWitness, err := txivc.CreateNormalLightWitness(normalTxId[:], OuterField)
+
+	publicWitness, err := txivc.CreateNormalLightWitness(normalTxId[:], outerCurve.ScalarField())
+
 	if err != nil {
 		fmt.Printf("%s", err)
 		return false
 	}
 
-	err = native_groth16.Verify(txProof, normalVerifyingKey, publicWitness, verifierOptions)
+	vOptions := groth16.GetNativeVerifierOptions(outerCurve.ScalarField(), innerCurve.ScalarField())
+	err = native_groth16.Verify(txProof, normalVerifyingKey, publicWitness, vOptions)
 	if err != nil {
 		fmt.Printf("Fail on proof verification! %s\n", err)
 		return false
