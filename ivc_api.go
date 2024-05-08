@@ -9,7 +9,6 @@ import (
 	"errors"
 	"fmt"
 	"github.com/consensys/gnark-crypto/ecc"
-	"github.com/consensys/gnark/backend"
 	native_groth16 "github.com/consensys/gnark/backend/groth16"
 	"github.com/consensys/gnark/backend/witness"
 	"github.com/consensys/gnark/constraint"
@@ -38,8 +37,9 @@ type NormalProofInfo struct {
 
 var InnerField *big.Int = ecc.BLS12_377.ScalarField()
 var OuterField *big.Int = ecc.BW6_761.ScalarField()
-var verifierOptions backend.VerifierOption
-var proverOptions backend.ProverOption
+var verifierOptions = groth16.GetNativeVerifierOptions(OuterField, InnerField)
+
+//var proverOptions = groth16.GetNativeProverOptions(OuterField, InnerField)
 
 // normal params
 var outerCurveId = ecc.BW6_761
@@ -57,9 +57,6 @@ func setupBaseCase(baseTxSize int) error {
 
 	//IMPORTANT: Base proof needs to read the inner field's curveId
 	innerCurveId = txivc.InnerCurve
-
-	verifierOptions = groth16.GetNativeVerifierOptions(OuterField, InnerField)
-	proverOptions = groth16.GetNativeProverOptions(OuterField, InnerField)
 
 	var err error
 	baseCcs, baseProvingKey, baseVerifyingKey, err = readBaseParams(baseTxSize)
@@ -421,7 +418,7 @@ func CreateBaseCaseProof(pInfo *BaseProofInfo) (string, error) {
 
 func VerifyBaseProof(txId string, jsonProof string) bool {
 
-	txProof := native_groth16.NewProof(txivc.InnerCurve)
+	txProof := native_groth16.NewProof(innerCurveId)
 
 	err := json.Unmarshal([]byte(jsonProof), &txProof)
 	if err != nil {
@@ -453,6 +450,32 @@ func VerifyBaseProof(txId string, jsonProof string) bool {
 
 }
 
-func VerifyNormalProof(txnId string, proof string) bool {
-	return false
+func VerifyNormalProof(txnId string, jsonProof string) bool {
+
+	txProof := native_groth16.NewProof(outerCurveId)
+
+	err := json.Unmarshal([]byte(jsonProof), &txProof)
+	if err != nil {
+		fmt.Printf("%s", err)
+		return false
+	}
+
+	normalTxId, err := hex.DecodeString(txnId)
+	if err != nil {
+		fmt.Printf("%s", err)
+		return false
+	}
+	publicWitness, err := txivc.CreateNormalLightWitness(normalTxId[:], OuterField)
+	if err != nil {
+		fmt.Printf("%s", err)
+		return false
+	}
+
+	err = native_groth16.Verify(txProof, normalVerifyingKey, publicWitness, verifierOptions)
+	if err != nil {
+		fmt.Printf("Fail on proof verification! %s\n", err)
+		return false
+	}
+
+	return true
 }

@@ -9,6 +9,19 @@ import (
 
 func handleNormalVerifyRoute(context *gin.Context) {
 
+	vData := &VerifyData{}
+
+	if context.Bind(vData) == nil {
+		isVerified := VerifyNormalProof(vData.TxnId, vData.Proof)
+
+		context.JSON(
+			http.StatusOK,
+			VerifyResult{
+				TxnId:    vData.TxnId,
+				Verified: isVerified,
+			})
+
+	}
 }
 
 func handleNormalCaseProverRoute(context *gin.Context) {
