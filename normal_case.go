@@ -4,7 +4,6 @@ import (
 	"fmt"
 	"github.com/gin-gonic/gin"
 	"github.com/rs/zerolog/log"
-	txivc "github.com/twostack/zklib/twostack/groth16"
 	"net/http"
 )
 
@@ -14,13 +13,13 @@ func handleNormalVerifyRoute(context *gin.Context) {
 
 func handleNormalCaseProverRoute(context *gin.Context) {
 
-	pInfo := txivc.NormalProofInfo{}
+	pInfo := NormalProofInfo{}
 
 	err := context.Bind(&pInfo)
 
 	if err == nil {
 
-		proof, err := proofSystem.CreateNormalCaseProof(&pInfo)
+		proof, err := CreateNormalCaseProof(&pInfo)
 
 		if err != nil {
 			log.Err(err)
