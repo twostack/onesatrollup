@@ -9,7 +9,7 @@ require (
 	github.com/libsv/go-bt v1.0.8
 	github.com/rs/zerolog v1.32.0
 	github.com/stretchr/testify v1.9.0
-	github.com/twostack/zklib v0.1.8
+	github.com/twostack/zklib v0.1.9
 )
 
 require (
@@ -58,4 +58,4 @@ require (
 	rsc.io/tmplfunc v0.0.3 // indirect
 )
 
-replace github.com/twostack/zklib v0.1.8 => /Users/stephanfebruary/IdeaProjects/zklib
+//replace github.com/twostack/zklib v0.1.8 => /Users/stephanfebruary/IdeaProjects/zklib

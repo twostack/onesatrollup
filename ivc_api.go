@@ -32,7 +32,8 @@ type NormalProofInfo struct {
 	RawTx        string `json:"raw_tx" binding:"required"`
 	InputIndex   int    `json:"input_index"`
 	IsParentBase bool   `json:"is_parent_base"`
-	Proof        string `json:"proof" binding:"required"`
+	PrevTxId     string `json:"prev_tx_id"`
+	Proof        string `json:"proof"`
 }
 
 var InnerField *big.Int = ecc.BLS12_377.ScalarField()
@@ -41,27 +42,27 @@ var verifierOptions backend.VerifierOption
 var proverOptions backend.ProverOption
 
 // normal params
-var normalCurveId ecc.ID
-var normalCcs *constraint.ConstraintSystem
-var normalVerifyingKey *native_groth16.VerifyingKey
-var normalProvingKey *native_groth16.ProvingKey
+var outerCurveId = ecc.BW6_761
+var normalCcs constraint.ConstraintSystem
+var normalVerifyingKey native_groth16.VerifyingKey
+var normalProvingKey native_groth16.ProvingKey
 
 // /
-var baseCurveId ecc.ID
-var baseCcs *constraint.ConstraintSystem
-var baseVerifyingKey *native_groth16.VerifyingKey
-var baseProvingKey *native_groth16.ProvingKey
+var innerCurveId = ecc.BLS12_377
+var baseCcs constraint.ConstraintSystem
+var baseVerifyingKey native_groth16.VerifyingKey
+var baseProvingKey native_groth16.ProvingKey
 
 func setupBaseCase(baseTxSize int) error {
 
 	//IMPORTANT: Base proof needs to read the inner field's curveId
-	baseCurveId = txivc.InnerCurve
+	innerCurveId = txivc.InnerCurve
 
 	verifierOptions = groth16.GetNativeVerifierOptions(OuterField, InnerField)
 	proverOptions = groth16.GetNativeProverOptions(OuterField, InnerField)
 
 	var err error
-	baseCcs, baseProvingKey, baseVerifyingKey, err = readBaseParams(baseTxSize, InnerField)
+	baseCcs, baseProvingKey, baseVerifyingKey, err = readBaseParams(baseTxSize)
 
 	if err != nil {
 		return err
@@ -73,10 +74,10 @@ func setupBaseCase(baseTxSize int) error {
 func setupNormalCase(prefixSize int, postfixSize int) error {
 
 	//IMPORTANT: Normal proof needs to read the OUTER field's curveId
-	normalCurveId = txivc.OuterCurve
+	outerCurveId = txivc.OuterCurve
 
 	var err error
-	normalCcs, normalProvingKey, normalVerifyingKey, err = readNormalSetupParams(prefixSize, postfixSize, OuterField)
+	normalCcs, normalProvingKey, normalVerifyingKey, err = readNormalSetupParams(prefixSize, postfixSize)
 
 	if err != nil {
 		return err
@@ -85,54 +86,57 @@ func setupNormalCase(prefixSize int, postfixSize int) error {
 	return nil
 }
 
-func readNormalSetupParams(prefixSize int, postfixSize int, outerField *big.Int) (*constraint.ConstraintSystem, *native_groth16.ProvingKey, *native_groth16.VerifyingKey, error) {
+func readNormalSetupParams(prefixSize int, postfixSize int) (constraint.ConstraintSystem, native_groth16.ProvingKey, native_groth16.VerifyingKey, error) {
 
 	if _, err := os.Stat("norm_ccs.cbor"); errors.Is(err, os.ErrNotExist) {
 
 		//setup normal case for base parent VK
-		normalCcs, provingKey, verifyingKey, err := txivc.SetupNormalCase(prefixSize, postfixSize, outerField, baseCcs)
+		normalCcs, normalProvingKey, normalVerifyingKey, err = txivc.SetupNormalCase(prefixSize, postfixSize, OuterField, baseCcs)
 
 		//FIXME:
 		//normalCcs, provingKey, verifyingKey, err := txivc.SetupNormalCase(outerField, *normalCcs)
 
 		normalCcsFile, err := os.Create("norm_ccs.cbor")
-		_, err = (*normalCcs).WriteTo(normalCcsFile)
+		_, err = normalCcs.WriteTo(normalCcsFile)
 		if err != nil {
 			return nil, nil, nil, err
 		}
 		normalCcsFile.Close()
 
-		err = writeKeys(verifyingKey, provingKey, "norm_")
+		err = writeKeys(normalVerifyingKey, normalProvingKey, "norm_")
 		if err != nil {
 			return nil, nil, nil, err
 		}
 
-		return normalCcs, provingKey, verifyingKey, nil
+		return normalCcs, normalProvingKey, normalVerifyingKey, nil
 	} else {
 
 		//in this portion we don't run Setup() again, because that generates different keys
-		normalCcs, err := readCircuitParams("norm_")
+		ccs, err := readCircuitParams("norm_", outerCurveId)
 		if err != nil {
 			return nil, nil, nil, err
 		}
 
-		verifyingKey, provingKey, err := readKeys("norm_", normalCurveId)
+		verifyingKey, provingKey, err := readKeys("norm_", outerCurveId)
 		if err != nil {
 			return nil, nil, nil, err
 		}
 
-		return normalCcs, provingKey, verifyingKey, nil
+		return ccs, provingKey, verifyingKey, nil
 	}
 }
 
-func readBaseParams(txSize int, innerField *big.Int) (*constraint.ConstraintSystem, *native_groth16.ProvingKey, *native_groth16.VerifyingKey, error) {
+func readBaseParams(txSize int) (constraint.ConstraintSystem, native_groth16.ProvingKey, native_groth16.VerifyingKey, error) {
 
 	if _, err := os.Stat("base_ccs.cbor"); errors.Is(err, os.ErrNotExist) {
 
-		baseCcs, provingKey, verifyingKey, err := txivc.SetupBaseCase(txSize, innerField)
+		ccs, provingKey, verifyingKey, err := txivc.SetupBaseCase(txSize, InnerField)
+		if err != nil {
+			return nil, nil, nil, err
+		}
 
 		baseccsFile, err := os.Create("base_ccs.cbor")
-		_, err = (*baseCcs).WriteTo(baseccsFile)
+		_, err = ccs.WriteTo(baseccsFile)
 		if err != nil {
 			return nil, nil, nil, err
 		}
@@ -143,27 +147,27 @@ func readBaseParams(txSize int, innerField *big.Int) (*constraint.ConstraintSyst
 			return nil, nil, nil, err
 		}
 
-		return baseCcs, provingKey, verifyingKey, nil
+		return ccs, provingKey, verifyingKey, nil
 	} else {
 
 		//in this portion we don't run Setup() again, because that generates different keys
-		baseCcs, err := readCircuitParams("base_")
+		ccs, err := readCircuitParams("base_", innerCurveId)
 		if err != nil {
 			return nil, nil, nil, err
 		}
 
-		verifyingKey, provingKey, err := readKeys("base_", baseCurveId)
+		verifyingKey, provingKey, err := readKeys("base_", innerCurveId)
 		if err != nil {
 			return nil, nil, nil, err
 		}
 
-		return baseCcs, provingKey, verifyingKey, nil
+		return ccs, provingKey, verifyingKey, nil
 	}
 }
 
-func readCircuitParams(prefix string) (*constraint.ConstraintSystem, error) {
+func readCircuitParams(prefix string, curveId ecc.ID) (constraint.ConstraintSystem, error) {
 
-	baseCcs := native_groth16.NewCS(txivc.InnerCurve)
+	baseCcs := native_groth16.NewCS(curveId)
 
 	ccsFile, err := os.OpenFile(prefix+"ccs.cbor", os.O_RDONLY, 0444) //read-only
 	if err != nil {
@@ -175,14 +179,14 @@ func readCircuitParams(prefix string) (*constraint.ConstraintSystem, error) {
 	}
 	ccsFile.Close()
 
-	return &baseCcs, nil
+	return baseCcs, nil
 }
 
-func writeKeys(verifyingKey *native_groth16.VerifyingKey, provingKey *native_groth16.ProvingKey, prefix string) error {
+func writeKeys(verifyingKey native_groth16.VerifyingKey, provingKey native_groth16.ProvingKey, prefix string) error {
 
 	start := time.Now()
 	innerVKFile, err := os.Create(prefix + "vk.cbor")
-	_, err = (*verifyingKey).WriteRawTo(innerVKFile)
+	_, err = verifyingKey.WriteRawTo(innerVKFile)
 	if err != nil {
 		return fmt.Errorf("Failed to write Verifying Key - %s", err)
 	}
@@ -195,7 +199,7 @@ func writeKeys(verifyingKey *native_groth16.VerifyingKey, provingKey *native_gro
 
 	start = time.Now()
 	innerPKFile, err := os.Create(prefix + "pk.cbor")
-	_, err = (*provingKey).WriteRawTo(innerPKFile)
+	_, err = provingKey.WriteRawTo(innerPKFile)
 	if err != nil {
 		return fmt.Errorf("Failed to write Proving Key - %s", err)
 	}
@@ -208,7 +212,7 @@ func writeKeys(verifyingKey *native_groth16.VerifyingKey, provingKey *native_gro
 	return nil
 }
 
-func readKeys(prefix string, curveId ecc.ID) (*native_groth16.VerifyingKey, *native_groth16.ProvingKey, error) {
+func readKeys(prefix string, curveId ecc.ID) (native_groth16.VerifyingKey, native_groth16.ProvingKey, error) {
 
 	start := time.Now()
 	innerVKFile, err := os.OpenFile(prefix+"vk.cbor", os.O_RDONLY, 0444) //read-only
@@ -243,16 +247,12 @@ func readKeys(prefix string, curveId ecc.ID) (*native_groth16.VerifyingKey, *nat
 	end = time.Since(start)
 	fmt.Printf("Importing Proving Key took : %s\n", end)
 
-	return &innerVK, &innerPK, nil
+	return innerVK, innerPK, nil
 }
 
 func CreateNormalCaseProof(normalInfo *NormalProofInfo) (string, error) {
 
-	var prevTxCcs constraint.ConstraintSystem
-	var prevTxVk native_groth16.VerifyingKey
-
-	var prevTxWitness *witness.Witness
-	var prevTxProof native_groth16.Proof
+	//var prevTxWitness witness.Witness
 
 	fullTxBytes, err := hex.DecodeString(normalInfo.RawTx)
 	if err != nil {
@@ -264,55 +264,33 @@ func CreateNormalCaseProof(normalInfo *NormalProofInfo) (string, error) {
 	firstHash := sha256.Sum256(fullTxBytes)
 	currTxId := sha256.Sum256(firstHash[:])
 
-	//initialize params based on whether our previous txn was a base case of normal case
-	if normalInfo.IsParentBase {
-		prevTxCcs = *baseCcs
-		prevTxVk = *baseVerifyingKey
-		prevTxProof = native_groth16.NewProof(baseCurveId)
-		prevTxWitness, err = CreateBaseCaseLightWitness(currTxId[:], InnerField)
-		if err != nil {
-			return "", err
-		}
-
-	} else {
-		/*
-			prevTxCcs = *ps.normalCcs
-			prevTxVk = *ps.normalVerifyingKey
-			prevTxProof = native_groth16.NewProof(normalProof.CurveId)
-			prevTxWitness, err = txivc.CreateNormalLightWitness(currTxId[:], normalProof.InnerField)
-			if err != nil {
-				return "", err
-			}
-		*/
-		return "proof with non-base case txn is not implemented yet", nil
-	}
-
-	var innerProofBytes = []byte(normalInfo.Proof)
-	err = json.Unmarshal(innerProofBytes, &prevTxProof)
+	prevTxProof, err := txivc.UnmarshalProof(normalInfo.Proof, innerCurveId)
 	if err != nil {
-		//log.Error().Msg(fmt.Sprintf("Error unmarshalling proof : [%s]\n", err.Error()))
+		fmt.Printf("Failed to unmarshall provided json proof object:   %s\n", err)
 		return "", err
 	}
 
-	normalWitness, err := CreateNormalFullWitness(
-		*prevTxWitness,
-		prevTxProof,
-		prevTxVk,
-		prefixBytes,
-		prevTxnId,
-		postfixBytes,
-		fullTxBytes,
-		OuterField,
-	)
+	prevTxWitness, err := txivc.CreateBaseCaseLightWitness(prevTxnId[:], InnerField)
+
+	pubWitness, err := prevTxWitness.Public()
+	isVerified := txivc.VerifyProof(pubWitness, prevTxProof, baseVerifyingKey)
+	if !isVerified {
+		return "Failed to verify the inner proof", err
+	}
+
+	circuitVk, err := groth16.ValueOfVerifyingKey[sw_bls12377.G1Affine, sw_bls12377.G2Affine, sw_bls12377.GT](baseVerifyingKey)
+	circuitWitness, err := groth16.ValueOfWitness[sw_bls12377.ScalarField](pubWitness)
+	circuitProof, err := groth16.ValueOfProof[sw_bls12377.G1Affine, sw_bls12377.G2Affine](prevTxProof)
+
+	outerAssignment := txivc.CreateOuterAssignment(circuitWitness, circuitProof, circuitVk, prefixBytes, prevTxnId, postfixBytes, currTxId[:])
+	outerWitness, err := frontend.NewWitness(&outerAssignment, OuterField)
 	if err != nil {
+		fmt.Printf("Fail ! %s\n", err)
 		return "", err
 	}
 
-	resultProof, err := ComputeProof(&prevTxCcs, normalProvingKey, normalWitness)
-	if err != nil {
-		//log.Error().Msg(fmt.Sprintf("Error computing proof : [%s]\n", err.Error()))
-		return "", err
-	}
+	resultProof, err := txivc.ComputeProof(normalCcs, normalProvingKey, outerWitness)
+	//outerProof, err := txivc.ComputeProof(outerCcs, outerProvingKey, outerWitness)
 
 	jsonBytes, err := json.Marshal(resultProof)
 
@@ -322,23 +300,6 @@ func CreateNormalCaseProof(normalInfo *NormalProofInfo) (string, error) {
 
 	return string(jsonBytes), nil
 
-}
-
-func ComputeProof(ccs *constraint.ConstraintSystem, provingKey *native_groth16.ProvingKey, outerWitness witness.Witness) (native_groth16.Proof, error) {
-
-	proverOptions := groth16.GetNativeProverOptions(ecc.BW6_761.ScalarField(), ecc.BLS12_377.ScalarField())
-	return native_groth16.Prove(*ccs, *provingKey, outerWitness, proverOptions)
-}
-
-func VerifyProof(genesisWitness witness.Witness, genesisProof native_groth16.Proof, verifyingKey native_groth16.VerifyingKey) bool {
-	publicWitness, err := genesisWitness.Public()
-	verifierOptions := groth16.GetNativeVerifierOptions(ecc.BW6_761.ScalarField(), ecc.BLS12_377.ScalarField())
-	err = native_groth16.Verify(genesisProof, verifyingKey, publicWitness, verifierOptions)
-	if err != nil {
-		fmt.Printf("Fail on base case verification! %s\n", err)
-		return false
-	}
-	return true
 }
 
 /*
@@ -415,109 +376,6 @@ func getOffSets(inputIndex uint64, r io.Reader) (int, int, error) {
 
 }
 
-func CreateBaseCaseLightWitness(
-	currTxId []byte,
-	innerField *big.Int,
-) (*witness.Witness, error) {
-
-	innerAssignment := txivc.Sha256CircuitBaseCase{
-		CurrTxId: make([]frontend.Variable, 32),
-	}
-
-	//copy(innerAssignment.CurrTxId[:], uints.NewU8Array(currTxId[:]))
-	for ndx, entry := range currTxId {
-		innerAssignment.CurrTxId[ndx] = entry
-	}
-
-	innerWitness, err := frontend.NewWitness(&innerAssignment, innerField)
-	if err != nil {
-		return nil, err
-	}
-	return &innerWitness, nil
-}
-
-func CreateBaseCaseFullWitness(
-	rawTxBytes []byte,
-	currTxId [32]byte,
-) (witness.Witness, error) {
-
-	innerAssignment := txivc.Sha256CircuitBaseCase{
-		RawTx:    make([]frontend.Variable, len(rawTxBytes)),
-		CurrTxId: make([]frontend.Variable, len(currTxId)),
-	}
-
-	//assign the current Txn data
-	for ndx := range rawTxBytes {
-		innerAssignment.RawTx[ndx] = rawTxBytes[ndx]
-	}
-	for ndx := range currTxId {
-		innerAssignment.CurrTxId[ndx] = currTxId[ndx]
-	}
-
-	innerWitness, err := frontend.NewWitness(&innerAssignment, ecc.BLS12_377.ScalarField())
-	if err != nil {
-		return nil, err
-	}
-	return innerWitness, nil
-}
-
-/*
-*
-Full witness is used for generating a new proof
-*/
-func CreateNormalFullWitness(
-	innerWitness witness.Witness,
-	innerProof native_groth16.Proof,
-	innerVk native_groth16.VerifyingKey,
-	prefixBytes []byte, prevTxnIdBytes []byte, postFixBytes []byte, currTxId []byte, field *big.Int) (witness.Witness, error) {
-
-	circuitVk, err := groth16.ValueOfVerifyingKey[sw_bls12377.G1Affine, sw_bls12377.G2Affine, sw_bls12377.GT](innerVk)
-	circuitWitness, err := groth16.ValueOfWitness[sw_bls12377.ScalarField](innerWitness)
-	circuitProof, err := groth16.ValueOfProof[sw_bls12377.G1Affine, sw_bls12377.G2Affine](innerProof)
-
-	outerAssignment := CreateOuterAssignment(circuitWitness, circuitProof, circuitVk, prefixBytes, prevTxnIdBytes, postFixBytes, currTxId)
-	fullWitness, err := frontend.NewWitness(&outerAssignment, field)
-
-	if err != nil {
-		return nil, err
-	}
-
-	return fullWitness, nil
-}
-
-func CreateOuterAssignment(
-	circuitWitness groth16.Witness[sw_bls12377.ScalarField],
-	circuitProof groth16.Proof[sw_bls12377.G1Affine, sw_bls12377.G2Affine],
-	verifyingKey groth16.VerifyingKey[sw_bls12377.G1Affine, sw_bls12377.G2Affine, sw_bls12377.GT],
-	prefixBytes []byte, prevTxnIdBytes []byte, postFixBytes []byte, currTxId []byte) txivc.Sha256Circuit[sw_bls12377.ScalarField, sw_bls12377.G1Affine, sw_bls12377.G2Affine, sw_bls12377.GT] {
-
-	outerAssignment := txivc.Sha256Circuit[sw_bls12377.ScalarField, sw_bls12377.G1Affine, sw_bls12377.G2Affine, sw_bls12377.GT]{
-		PreviousWitness: circuitWitness,
-		PreviousProof:   circuitProof,
-		PreviousVk:      verifyingKey,
-
-		CurrTxPrefix: make([]frontend.Variable, len(prefixBytes)),
-		CurrTxPost:   make([]frontend.Variable, len(postFixBytes)),
-		PrevTxId:     make([]frontend.Variable, len(prevTxnIdBytes)),
-		CurrTxId:     make([]frontend.Variable, len(currTxId)),
-	}
-
-	for ndx := range prefixBytes {
-		outerAssignment.CurrTxPrefix[ndx] = prefixBytes[ndx]
-	}
-	for ndx := range postFixBytes {
-		outerAssignment.CurrTxPost[ndx] = postFixBytes[ndx]
-	}
-	for ndx := range prevTxnIdBytes {
-		outerAssignment.PrevTxId[ndx] = prevTxnIdBytes[ndx]
-	}
-	for ndx := range currTxId {
-		outerAssignment.CurrTxId[ndx] = currTxId[ndx]
-	}
-
-	return outerAssignment
-}
-
 /*
 *
 Light witness is used for verification of an existing proof. I.e. only public params are filled.
@@ -545,7 +403,7 @@ func CreateBaseCaseProof(pInfo *BaseProofInfo) (string, error) {
 	firstHash := sha256.Sum256(fullTxBytes)
 	genesisTxId := sha256.Sum256(firstHash[:])
 
-	genesisWitness, err := txivc.CreateBaseCaseFullWitness(fullTxBytes, genesisTxId)
+	genesisWitness, err := txivc.CreateBaseCaseFullWitness(fullTxBytes, genesisTxId[:])
 
 	if err != nil {
 		return "", err
@@ -585,7 +443,7 @@ func VerifyBaseProof(txId string, jsonProof string) bool {
 	//isVerified := ps.VerifyProof(publicWitness, &txProof)
 
 	//func (po *BaseProof) VerifyProof(witness *witness.Witness, proof *native_groth16.Proof) bool {
-	err = native_groth16.Verify(txProof, *baseVerifyingKey, *publicWitness, verifierOptions)
+	err = native_groth16.Verify(txProof, baseVerifyingKey, publicWitness, verifierOptions)
 	if err != nil {
 		fmt.Printf("Fail on proof verification! %s\n", err)
 		return false
