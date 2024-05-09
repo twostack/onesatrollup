@@ -10,7 +10,6 @@ import (
 	"fmt"
 	"github.com/consensys/gnark-crypto/ecc"
 	native_groth16 "github.com/consensys/gnark/backend/groth16"
-	"github.com/consensys/gnark/backend/witness"
 	"github.com/consensys/gnark/constraint"
 	"github.com/consensys/gnark/frontend"
 	"github.com/consensys/gnark/std/algebra/native/sw_bls12377"
@@ -247,24 +246,21 @@ func readKeys(prefix string, curveId ecc.ID) (native_groth16.VerifyingKey, nativ
 	return innerVK, innerPK, nil
 }
 
-func CreateNormalCaseProof(normalInfo *NormalProofInfo, baseVk native_groth16.VerifyingKey, normalVk native_groth16.VerifyingKey, prevCcs constraint.ConstraintSystem) (string, string, error) {
+func CreateNormalCaseProof(currTxId []byte, normalInfo *NormalProofInfo, baseVk native_groth16.VerifyingKey, normalVk native_groth16.VerifyingKey) (string, error) {
 
 	//var prevTxWitness witness.Witness
 
 	fullTxBytes, err := hex.DecodeString(normalInfo.RawTx)
 	if err != nil {
-		return "", "", err
+		return "", err
 	}
 
 	prefixBytes, prevTxnId, postfixBytes, err := SliceTx(fullTxBytes, normalInfo.InputIndex)
 
-	firstHash := sha256.Sum256(fullTxBytes)
-	currTxId := sha256.Sum256(firstHash[:])
-
 	prevTxProof, err := txivc.UnmarshalProof(normalInfo.Proof, innerCurveId)
 	if err != nil {
 		fmt.Printf("Failed to unmarshall provided json proof object:   %s\n", err)
-		return "", "", err
+		return "", err
 	}
 
 	prevTxWitness, err := txivc.CreateBaseCaseLightWitness(prevTxnId[:], InnerField)
@@ -272,7 +268,7 @@ func CreateNormalCaseProof(normalInfo *NormalProofInfo, baseVk native_groth16.Ve
 	pubWitness, err := prevTxWitness.Public()
 	isVerified := txivc.VerifyProof(pubWitness, prevTxProof, baseVk)
 	if !isVerified {
-		return "Failed to verify the inner proof", "", err
+		return "Failed to verify the inner proof", err
 	}
 
 	circuitVk, err := groth16.ValueOfVerifyingKey[sw_bls12377.G1Affine, sw_bls12377.G2Affine, sw_bls12377.GT](baseVerifyingKey)
@@ -283,25 +279,21 @@ func CreateNormalCaseProof(normalInfo *NormalProofInfo, baseVk native_groth16.Ve
 	outerWitness, err := frontend.NewWitness(&outerAssignment, OuterField)
 	if err != nil {
 		fmt.Printf("Failed to create new outer witness ! %s\n", err)
-		return "", "", err
+		return "", err
 	}
 
 	resultProof, err := txivc.ComputeProof(normalCcs, normalProvingKey, outerWitness)
 	if err != nil {
 		fmt.Printf("Failed to computer outer proof! %s\n", err)
-		return "", "", err
+		return "", err
 	}
-	//outerProof, err := txivc.ComputeProof(outerCcs, outerProvingKey, outerWitness)
 
-	//pubWitness, err = txivc.CreateNormalLightWitness(currTxId[:], OuterField, prevCcs)
 	pubWitness, err = outerWitness.Public()
-
-	witnessBytes, _ := pubWitness.MarshalBinary()
 
 	isVerified = txivc.VerifyProof(pubWitness, resultProof, normalVk)
 	if !isVerified {
 		fmt.Printf("Failed to verify the generated normal proof ! %s\n", err)
-		return "", "", err
+		return "", err
 	} else {
 		fmt.Printf("Excellent ! Normal proof verified OK. With Witness.TxId [%s] \n", hex.EncodeToString(currTxId[:]))
 	}
@@ -309,10 +301,10 @@ func CreateNormalCaseProof(normalInfo *NormalProofInfo, baseVk native_groth16.Ve
 	jsonBytes, err := json.Marshal(resultProof)
 
 	if err != nil {
-		return "", "", err
+		return "", err
 	}
 
-	return string(jsonBytes), hex.EncodeToString(witnessBytes), nil
+	return string(jsonBytes), nil
 
 }
 
@@ -387,26 +379,6 @@ func getOffSets(inputIndex uint64, r io.Reader) (int, int, error) {
 	postfixStart := txIdOffSet + 32
 
 	return txIdOffSet, postfixStart, nil
-
-}
-
-/*
-*
-Light witness is used for verification of an existing proof. I.e. only public params are filled.
-*/
-func CreateNormalLightWitness(txId []byte, outerField *big.Int) (*witness.Witness, error) {
-
-	outerAssignment := txivc.Sha256Circuit[sw_bls12377.ScalarField, sw_bls12377.G1Affine, sw_bls12377.G2Affine, sw_bls12377.GT]{
-		CurrTxId: make([]frontend.Variable, 32),
-	}
-
-	lightWitness, err := frontend.NewWitness(&outerAssignment, outerField)
-
-	if err != nil {
-		return nil, err
-	}
-
-	return &lightWitness, nil
 
 }
 

@@ -1,6 +1,8 @@
 package main
 
 import (
+	"crypto/sha256"
+	"encoding/hex"
 	"fmt"
 	"github.com/gin-gonic/gin"
 	"github.com/rs/zerolog/log"
@@ -36,7 +38,13 @@ func handleNormalCaseProverRoute(context *gin.Context) {
 
 	if err == nil {
 
-		proof, pubWitness, err := CreateNormalCaseProof(&pInfo, baseVerifyingKey, normalVerifyingKey, baseCcs)
+		fullTxBytes, err := hex.DecodeString(pInfo.RawTx)
+
+		firstHash := sha256.Sum256(fullTxBytes)
+		currTxId := sha256.Sum256(firstHash[:])
+
+		//TODO: currTxId should be returned from following method, not passed in. Too lazy to fix now.
+		proof, err := CreateNormalCaseProof(currTxId[:], &pInfo, baseVerifyingKey, normalVerifyingKey)
 
 		if err != nil {
 			log.Err(err)
@@ -45,8 +53,8 @@ func handleNormalCaseProverRoute(context *gin.Context) {
 			context.JSON(
 				http.StatusOK,
 				gin.H{
-					"proof":   proof,
-					"witness": pubWitness,
+					"txn_id": currTxId,
+					"proof":  proof,
 				})
 		}
 

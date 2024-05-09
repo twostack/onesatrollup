@@ -58,4 +58,4 @@ require (
 	rsc.io/tmplfunc v0.0.3 // indirect
 )
 
-//replace github.com/twostack/zklib v0.1.9 => /Users/stephanfebruary/IdeaProjects/zklib
+replace github.com/twostack/zklib v0.1.10 => /Users/stephanfebruary/IdeaProjects/zklib
